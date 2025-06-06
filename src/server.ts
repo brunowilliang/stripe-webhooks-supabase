@@ -1,9 +1,9 @@
 import type Stripe from 'stripe';
 import { stripe } from './libs/stripe';
-import { supabase, supabaseService } from './libs/supabase';
-import type { Database } from './libs/database.types';
+import { supabaseService } from './libs/supabase';
+import type { Tables } from './libs/database.types';
 
-type Professional = Database['public']['Tables']['professionals']['Row'];
+type Professional = Tables<'professionals'>;
 
 // Database webhook payload type
 interface DatabaseWebhookPayload {
@@ -23,11 +23,11 @@ Bun.serve({
         });
       },
     },
-    "/webhooks/database": {
+    "/webhooks/auth": {
       POST: async (req) => {
         try {
           const payload = await req.json() as DatabaseWebhookPayload;
-          console.log('📨 Database webhook received:', payload.type);
+          console.log('📨 Auth webhook received:', payload.type);
 
           // Only handle professionals table
           if (payload.table !== 'professionals') {
@@ -142,25 +142,131 @@ Bun.serve({
 
           return Response.json({ received: true });
         } catch (error) {
-          console.error('💥 Database webhook error:', error);
+          console.error('💥 Auth webhook error:', error);
           return Response.json({ error: 'Webhook processing failed' }, { status: 500 });
         }
       },
     },
-    "/stripe-webhook": {
+    "/webhooks/stripe": {
       POST: async (req) => {
         try {
           const event = await req.json() as Stripe.Event;
+          console.log('🎣 Stripe webhook received:', event.type);
 
-            if (event.type === 'customer.created') {
-              console.log('✅ Customer created:', event.data.object.id);
+          switch (event.type) {
+            case 'customer.subscription.created': {
+              const subscription = event.data.object as Stripe.Subscription;
+              const customerId = subscription.customer as string;
               
-              return Response.json({ received: true });
+              console.log('📝 Subscription created for customer:', customerId);
+              
+              // Find professional by customer_id
+              const { data: professional, error: fetchError } = await supabaseService
+                .from('professionals')
+                .select('id')
+                .eq('stripe_customer_id', customerId)
+                .single();
+
+              if (fetchError || !professional) {
+                console.error('❌ Professional not found for customer:', customerId);
+                break;
+              }
+              
+              const { error } = await supabaseService
+                .from('professionals')
+                .update({ stripe_subscription_id: subscription.id })
+                .eq('id', professional.id);
+
+              if (error) {
+                console.error('❌ Failed to update subscription_id:', error);
+              } else {
+                console.log('✅ Professional updated with subscription_id:', subscription.id);
+              }
+              break;
             }
 
-          return Response.json({ received: true, event_type: event.type });
+            case 'customer.subscription.updated': {
+              const subscription = event.data.object as Stripe.Subscription;
+              const customerId = subscription.customer as string;
+              
+              console.log('🔄 Subscription updated:', subscription.id, 'Status:', subscription.status);
+              
+              // Find professional by customer_id
+              const { data: professional } = await supabaseService
+                .from('professionals')
+                .select('id')
+                .eq('stripe_customer_id', customerId)
+                .single();
+
+              if (!professional) {
+                console.error('❌ Professional not found for customer:', customerId);
+                break;
+              }
+              
+              // Handle status changes (active, canceled, etc.)
+              if (subscription.status === 'canceled') {
+                const { error } = await supabaseService
+                  .from('professionals')
+                  .update({ stripe_subscription_id: null })
+                  .eq('id', professional.id);
+
+                if (!error) {
+                  console.log('✅ Subscription removed from professional (canceled)');
+                }
+              }
+              break;
+            }
+
+            case 'customer.subscription.deleted': {
+              const subscription = event.data.object as Stripe.Subscription;
+              const customerId = subscription.customer as string;
+              
+              console.log('🗑️ Subscription deleted for customer:', customerId);
+              
+              // Find professional by customer_id
+              const { data: professional } = await supabaseService
+                .from('professionals')
+                .select('id')
+                .eq('stripe_customer_id', customerId)
+                .single();
+
+              if (!professional) {
+                console.error('❌ Professional not found for customer:', customerId);
+                break;
+              }
+              
+              const { error } = await supabaseService
+                .from('professionals')
+                .update({ stripe_subscription_id: null })
+                .eq('id', professional.id);
+
+              if (!error) {
+                console.log('✅ Subscription removed from professional (deleted)');
+              }
+              break;
+            }
+
+            case 'invoice.payment_succeeded': {
+              const invoice = event.data.object as Stripe.Invoice;
+              console.log('💰 Payment succeeded for customer:', invoice.customer);
+              break;
+            }
+
+            case 'invoice.payment_failed': {
+              const invoice = event.data.object as Stripe.Invoice;
+              console.log('❌ Payment failed for customer:', invoice.customer);
+              break;
+            }
+
+            default: {
+              console.log('❓ Unhandled event type:', event.type);
+              break;
+            }
+          }
+
+          return Response.json({ received: true });
         } catch (error) {
-          console.error('💥 Webhook error:', error);
+          console.error('💥 Stripe webhook error:', error);
           return Response.json({ error: 'Webhook processing failed' }, { status: 400 });
         }
       },
