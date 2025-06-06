@@ -1,6 +1,6 @@
 import type Stripe from 'stripe';
 import { stripe } from './libs/stripe';
-import { supabase } from './libs/supabase';
+import { supabase, supabaseService } from './libs/supabase';
 import type { Database } from './libs/database.types';
 
 type Professional = Database['public']['Tables']['professionals']['Row'];
@@ -47,7 +47,7 @@ Bun.serve({
             console.log('💳 Stripe customer created:', customer.id);
 
             // Update professional with stripe_customer_id
-            const { error } = await supabase
+            const { error } = await supabaseService
               .from('professionals')
               .update({ stripe_customer_id: customer.id })
               .eq('id', professional.id);
