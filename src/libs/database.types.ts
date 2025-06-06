@@ -61,43 +61,46 @@ export type Database = {
     Tables: {
       professionals: {
         Row: {
-          customer_id: string | null
-          full_name: string | null
+          created_at: string | null
+          full_name: string
           id: string
-          plan_type: string | null
-          subscription_id: string | null
-          subscription_status: string | null
+          stripe_customer_id: string | null
+          updated_at: string | null
         }
         Insert: {
-          customer_id?: string | null
-          full_name?: string | null
+          created_at?: string | null
+          full_name: string
           id: string
-          plan_type?: string | null
-          subscription_id?: string | null
-          subscription_status?: string | null
+          stripe_customer_id?: string | null
+          updated_at?: string | null
         }
         Update: {
-          customer_id?: string | null
-          full_name?: string | null
+          created_at?: string | null
+          full_name?: string
           id?: string
-          plan_type?: string | null
-          subscription_id?: string | null
-          subscription_status?: string | null
+          stripe_customer_id?: string | null
+          updated_at?: string | null
         }
         Relationships: []
       }
       users: {
         Row: {
-          full_name: string | null
+          created_at: string | null
+          full_name: string
           id: string
+          updated_at: string | null
         }
         Insert: {
-          full_name?: string | null
+          created_at?: string | null
+          full_name: string
           id: string
+          updated_at?: string | null
         }
         Update: {
-          full_name?: string | null
+          created_at?: string | null
+          full_name?: string
           id?: string
+          updated_at?: string | null
         }
         Relationships: []
       }

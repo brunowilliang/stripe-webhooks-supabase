@@ -1,3 +1,18 @@
 @baseUrl = http://localhost:3000
 # @name userSignup
 GET {{baseUrl}}/
+
+### 
+
+# @name userSignup
+POST https://stripe-webhooks.apps.brunowillian.com/stripe-webhook
+Content-Type: application/json
+
+{
+    "type": "customer.created",
+    "data": {
+        "object": {
+            "id": "cus_1234567890"
+        }
+    }
+}
