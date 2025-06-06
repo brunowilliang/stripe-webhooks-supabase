@@ -29,39 +29,115 @@ Bun.serve({
           const payload = await req.json() as DatabaseWebhookPayload;
           console.log('📨 Database webhook received:', payload.type);
 
-          // Check if it's a professional creation
-          if (payload.type === 'INSERT' && payload.table === 'professionals' && payload.record) {
-            const professional = payload.record;
-            
-            console.log('👨‍💼 New professional created:', professional.id);
+          // Only handle professionals table
+          if (payload.table !== 'professionals') {
+            return Response.json({ received: true });
+          }
 
-            // Create Stripe customer
-            const customer = await stripe.customers.create({
-              name: professional.full_name,
-              metadata: {
-                supabase_id: professional.id,
-                role: 'PROFESSIONAL'
+          switch (payload.type) {
+            case 'INSERT': {
+              if (!payload.record) break;
+              
+              const professional = payload.record;
+              console.log('👨‍💼 New professional created:', professional.id);
+
+              // Create Stripe customer
+              const customer = await stripe.customers.create({
+                name: professional.full_name,
+                metadata: {
+                  supabase_id: professional.id,
+                  role: 'PROFESSIONAL'
+                }
+              });
+
+              console.log('💳 Stripe customer created:', customer.id);
+
+              // Update professional with stripe_customer_id
+              const { error } = await supabaseService
+                .from('professionals')
+                .update({ stripe_customer_id: customer.id })
+                .eq('id', professional.id);
+
+              if (error) {
+                console.error('❌ Failed to update stripe_customer_id:', error);
+                return Response.json({ error: 'Failed to update professional' }, { status: 500 });
               }
-            });
 
-            console.log('💳 Stripe customer created:', customer.id);
-
-            // Update professional with stripe_customer_id
-            const { error } = await supabaseService
-              .from('professionals')
-              .update({ stripe_customer_id: customer.id })
-              .eq('id', professional.id);
-
-            if (error) {
-              console.error('❌ Failed to update stripe_customer_id:', error);
-              return Response.json({ error: 'Failed to update professional' }, { status: 500 });
+              console.log('✅ Professional updated with Stripe customer ID');
+              return Response.json({ 
+                success: true, 
+                stripe_customer_id: customer.id 
+              });
             }
 
-            console.log('✅ Professional updated with Stripe customer ID');
-            return Response.json({ 
-              success: true, 
-              stripe_customer_id: customer.id 
-            });
+            case 'UPDATE': {
+              if (!payload.record || !payload.old_record) break;
+              
+              const updatedProfessional = payload.record;
+              const oldProfessional = payload.old_record;
+              
+              console.log('🔄 Professional updated:', updatedProfessional.id);
+
+              // Check if stripe_customer_id exists
+              if (!updatedProfessional.stripe_customer_id) {
+                console.log('⚠️ No Stripe customer ID found, skipping sync');
+                return Response.json({ received: true });
+              }
+
+              // Check if name changed
+              if (updatedProfessional.full_name !== oldProfessional.full_name) {
+                console.log('📝 Name changed, updating Stripe customer');
+                
+                // Update Stripe customer
+                await stripe.customers.update(updatedProfessional.stripe_customer_id, {
+                  name: updatedProfessional.full_name
+                });
+
+                console.log('✅ Stripe customer updated with new name');
+              }
+
+              return Response.json({ 
+                success: true, 
+                synced: true 
+              });
+            }
+
+            case 'DELETE': {
+              if (!payload.old_record) break;
+              
+              const deletedProfessional = payload.old_record;
+              console.log('🗑️ Professional deleted:', deletedProfessional.id);
+
+              // Check if stripe_customer_id exists
+              if (!deletedProfessional.stripe_customer_id) {
+                console.log('⚠️ No Stripe customer ID found, skipping deletion');
+                return Response.json({ received: true });
+              }
+
+              try {
+                // Delete Stripe customer
+                await stripe.customers.del(deletedProfessional.stripe_customer_id);
+                console.log('✅ Stripe customer deleted:', deletedProfessional.stripe_customer_id);
+                
+                return Response.json({ 
+                  success: true, 
+                  deleted: true,
+                  stripe_customer_id: deletedProfessional.stripe_customer_id
+                });
+              } catch (stripeError) {
+                console.error('❌ Failed to delete Stripe customer:', stripeError);
+                // Don't fail the entire webhook if Stripe deletion fails
+                return Response.json({ 
+                  warning: 'Professional deleted but Stripe customer deletion failed',
+                  stripe_customer_id: deletedProfessional.stripe_customer_id
+                });
+              }
+            }
+
+            default: {
+              console.log('❓ Unknown event type:', payload.type);
+              return Response.json({ received: true });
+            }
           }
 
           return Response.json({ received: true });
