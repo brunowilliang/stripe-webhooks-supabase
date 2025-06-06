@@ -6,6 +6,13 @@ import { supabase } from './libs/supabase';
 Bun.serve({
   port: 3000,
   routes: {
+    "/": {
+      GET: async (req) => {
+        return Response.json({
+          message: '🚀 Stripe Webhook running',
+        });
+      },
+    },
     "/stripe-webhook": {
       POST: async (req) => {
         try {
